@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Sesli Görüşme</title>
+</head>
+
+<body>
+    <h1>WebRTC Sesli Görüşme</h1>
+
+    <audio id="localAudio" mutedg autoplay></audio>
+    <audio id="remoteAudio" autoplay></audio>
+
+    <button id="startButton">Bağlantıyı Başlat</button>
+    <button id="stopButton">Bağlantıyı Kapat</button>
+
+</body>
+
+<script>
+    const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    const localAudio = document.getElementById('localAudio');
+    const remoteAudio = document.getElementById('remoteAudio');
+    let localStream;
+    let remoteStream;
+    let peerConnection;
+
+    // WebSocket bağlantısı
+    const socket = new WebSocket('ws://localhost:3000');
+
+    startButton.addEventListener('click', startConnection);
+    stopButton.addEventListener('click', stopConnection);
+
+    async function startConnection() {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            localAudio.srcObject = localStream;
+
+            // WebRTC bağlantısını başlatma
+            peerConnection = new RTCPeerConnection();
+
+            // Local streami ekleme
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            // Remote streamin gelmesini bekleyerek onun bağlantısını yapma
+            peerConnection.ontrack = (event) => {
+                remoteStream = event.streams[0];
+                remoteAudio.srcObject = remoteStream;
+            };
+
+            // WebRTC bağlantısı üzerinden sinyal almak
+            socket.onmessage = (event) => {
+                const signal = JSON.parse(event.data);
+                if (signal.sdp) {
+                    peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp))
+                        .then(() => {
+                            if (signal.sdp.type === 'offer') {
+                                return peerConnection.createAnswer();
+                            }
+                        })
+                        .then((answer) => {
+                            return peerConnection.setLocalDescription(answer);
+                        })
+                        .then(() => {
+                            // Cevabı sinyal sunucusuna gönder
+                            socket.send(JSON.stringify({ 'sdp': peerConnection.localDescription }));
+                        })
+                        .catch((error) => {
+                            console.error('Bağlantı hatası:', error);
+                        });
+                } else if (signal.ice) {
+                    // ICE adaylarını ekleyerek bağlantıyı tamamlama
+                    peerConnection.addIceCandidate(new RTCIceCandidate(signal.ice))
+                        .catch((error) => {
+                            console.error('ICE adayı eklenirken hata:', error);
+                        });
+                }
+            };
+
+            // ICE adaylarını sinyal sunucusuna gönderme
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.send(JSON.stringify({ 'ice': event.candidate }));
+                }
+            };
+
+            // Offer oluşturma
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+
+            // Offer'ı sinyal sunucusuna gönderme
+            socket.send(JSON.stringify({ 'sdp': peerConnection.localDescription }));
+
+        } catch (error) {
+            console.error('Bağlantı hatası:', error);
+        }
+    }
+
+    function stopConnection() {
+        // WebRTC bağlantısını kapatma
+        if (peerConnection) {
+            peerConnection.close();
+            localStream.getTracks().forEach(track => track.stop());
+            localAudio.srcObject = null;
+            remoteAudio.srcObject = null;
+        }
+    }
+
+</script>
+
+</html>

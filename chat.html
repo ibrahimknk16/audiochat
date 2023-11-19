@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket Chat</title>
+</head>
+
+<body>
+    <h1>WebSocket Chat</h1>
+    <h2>UserID: <span id="userID"></span></h2>
+    <h2>RoomID: <span id="roomID"></span></h2>
+
+    <h3>Chat</h3>
+    <div id="chat"></div>
+    <input type="text" id="messageInput" placeholder="Mesajınızı girin...">
+    <button class="sendButton" onclick="sendMessage()">Gönder</button>
+
+    <script>
+        const socket = new WebSocket('ws://localhost:8080'); // Sunucu adresi ve port numarası
+        const urlParams = new URLSearchParams(window.location.search);
+
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.querySelector('.sendButton');
+        const chat = document.getElementById('chat');
+        const userID = urlParams.get('userID') ? urlParams.get('userID') : 'guest' + Math.floor(Math.random() * 1000);
+        const roomID = urlParams.get('roomID') ? urlParams.get('roomID') : 'default';
+
+        document.getElementById('userID').innerHTML = userID;
+        document.getElementById('roomID').innerHTML = roomID;
+
+        messageInput.addEventListener('keyup', (event) => {
+            if (event.keyCode === 13) {
+                event.preventDefault();
+                sendButton.click();
+            }
+        });
+
+        // messageInput.addEventListener('input', () => {
+        //     if (messageInput.value.length > 0) {
+        //         const typingData = {
+        //             type: 'typing',
+        //             userID: userID,
+        //             room: roomID
+        //         };
+        //         socket.send(JSON.stringify(typingData));
+        //     } else {
+        //         const typingData = {
+        //             type: 'typing',
+        //             userID: userID,
+        //             room: roomID
+        //         };
+        //         socket.send(JSON.stringify(typingData));
+        //     }
+        // });
+
+        // messageInput.addEventListener('blur', () => {
+        //     const typingData = {
+        //         type: 'typing',
+        //         userID: userID,
+        //         room: roomID
+        //     };
+        //     socket.send(JSON.stringify(typingData));
+        // });
+
+
+        socket.onopen = function (event) {
+            console.log('Sunucuya bağlanıldı');
+            // Odaya katılım işlemi
+            const joinData = {
+                type: 'joinRoom',
+                userID: userID,
+                room: roomID
+            };
+            socket.send(JSON.stringify(joinData));
+        };
+
+        socket.onmessage = function (event) {
+            console.log(event.data);
+            const data = JSON.parse(event.data);
+            if (data.type === 'chatMessage') {
+                chat.innerHTML += '<p><strong>' + data.user + ': </strong>' + data.message + '</p>';
+            } else if (data.type === 'typing') {
+                chat.innerHTML += '<p><strong>' + data.user + ': </strong>' + 'Yazıyor...' + '</p>';
+            } else if (data.type === 'joinRoom') {
+                chat.innerHTML += '<p><strong>' + data.user + ': </strong>' + data.message + '</p>';
+            } else if (data.type === 'leaveRoom') {
+                chat.innerHTML += '<p><strong>' + data.user + ': </strong>' + data.message + '</p>';
+            }
+        };
+
+        // messageInput.addEventListener('input', (event) => {
+        //     if (messageInput.value.length > 0) {
+        //         const typingData = {
+        //             type: 'typing',
+        //             userID: userID,
+        //             room: roomID // Oda adını burada belirtin
+        //         };
+        //         socket.send(JSON.stringify(typingData));
+        //     }
+        // });
+
+        function sendMessage() {
+            const message = messageInput.value;
+            const messageData = {
+                type: 'chatMessage',
+                message: message,
+                userID: userID,
+                room: roomID
+            };
+            socket.send(JSON.stringify(messageData));
+            messageInput.value = '';
+            chat.innerHTML += '<p><strong>' + userID + ': </strong>' + message + '</p>';
+        }
+    </script>
+</body>
+
+</html>
